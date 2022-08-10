@@ -1,0 +1,125 @@
+library(forecast)
+library(fpp)
+
+Tumblr_People <-read.csv(file.choose(), header=TRUE, sep=",")
+
+Tumblr_People_ts <- ts(data = Tumblr_People, start=c(2010,4), frequency=12) # ts function defines the dataset as timeseries
+
+Last36M <- ((Tumblr_People_ts[38]/Tumblr_People_ts[1])^(1/(37)) -1)
+Last12M <- ((Tumblr_People_ts[38]/Tumblr_People_ts[26])^(1/(12)) -1)
+
+Last36M
+Last12M
+
+plot(Tumblr_People_ts)
+
+fit_m <- decompose(Tumblr_People_ts, type="multiplicative")
+plot(fit_m)
+
+fit_a <- decompose(Tumblr_People_ts, type="additive") #decompose using "classical" method, additive form
+plot(fit_a)
+
+# Fit time series into ets models
+# damped=TRUE because we expect the user growth to plateau
+Tumblr_People_AAZ <- ets(Tumblr_People_ts, model="AAZ", damped=TRUE)
+Tumblr_People_AAN <- ets(Tumblr_People_ts, model="AAN", damped=TRUE)
+Tumblr_People_MMZ <- ets(Tumblr_People_ts, model="MMZ", damped=TRUE)
+Tumblr_People_MMN <- ets(Tumblr_People_ts, model="MMN", damped=TRUE)
+
+# Call the 4 models to see what parameters are selected
+Tumblr_People_AAZ
+Tumblr_People_AAN
+Tumblr_People_MMZ
+Tumblr_People_MMN
+
+# Since the Z parameter defaults to N for seasonality for both the additive and multiplicative models, we will discard the N-seasonality models
+
+Tumblr_People_AAZ_Pred <- forecast(Tumblr_People_AAZ, h=115, level=c(0.8, 0.95))
+Tumblr_People_MMZ_Pred <- forecast(Tumblr_People_MMZ, h=115, level=c(0.8, 0.95))
+
+# Compare the prediction "cones" visually
+par(mfrow=c(1,2)) # Lets look at the 2 models at the same time
+plot(Tumblr_People_AAZ_Pred, xlab="Year", ylab="Predicted people", ylim=c(0,300000000))
+plot(Tumblr_People_MMZ_Pred, xlab="Year", ylab="Predicted people", ylim=c(0,300000000))
+
+# Now we use the tbats model for forecasting
+# damped=TRUE because we expect the user growth to plateau
+Tumblr_People_tbats <- tbats(Tumblr_People_ts,  use.damped.trend = TRUE)
+
+#Call the model to see the parameters
+Tumblr_People_tbats
+
+#Inspect cone visually
+Tumblr_People_tbats_pred <-forecast(Tumblr_People_tbats, h=115, level=c(0.8, 0.95))
+Tumblr_People_tbats_pred
+par(mfrow=c(1,1))
+plot(Tumblr_People_tbats_pred, xlab="Year", ylab="Predicted people",ylim=c(0,300000000))
+
+
+#Compare residuals of all three models
+par(mfrow=c(1,3))
+Acf(residuals(Tumblr_People_AAZ_Pred))
+Acf(residuals(Tumblr_People_MMZ_Pred))
+Acf(residuals(Tumblr_People_tbats_pred))
+
+#Compare three models visually 
+par(mfrow=c(1,3))
+plot(Tumblr_People_AAZ_Pred, xlab="Year", ylab="Predicted people", ylim=c(0,300000000))
+plot(Tumblr_People_MMZ_Pred, xlab="Year", ylab="Predicted people", ylim=c(0,300000000))
+plot(Tumblr_People_tbats_pred, xlab="Year", ylab="Predicted people",ylim=c(0,300000000))
+
+###
+### Comparing models -- Time series Cross Validation (Rolling Horizon Holdout)
+### Using 12 months as the comparison window
+
+f_AAZ <- function(y, h) forecast(ets(y, model="AAZ", damped=TRUE), h = h)
+errors_AAZ <- tsCV(Tumblr_People_ts, f_AAZ, h=1, window = 12)
+
+f_MMZ <- function(y, h) forecast(ets(y, model="MMZ", damped=TRUE), h = h)
+errors_MMZ <- tsCV(Tumblr_People_ts, f_MMZ, h=1, window = 12)
+
+f_TBATS <- function(y, h) forecast(tbats(y), h = h)
+errors_TBATS <- tsCV(Tumblr_People_ts, f_TBATS, h=1, window = 12)
+
+par(mfrow=c(1,1)) 
+plot(errors_AAZ, ylab='tsCV errors')
+abline(0,0)
+lines(errors_MMZ, col="green")
+lines(errors_TBATS, col="red")
+legend("left", legend=c("CV_error_AAZ", "CV_error_MMZ","CV_error_TBATS"), col=c("black", "green", "red"), lty=1:4)
+
+mean(abs(errors_AAZ/Tumblr_People_ts), na.rm=TRUE)*100
+mean(abs(errors_MMZ/Tumblr_People_ts), na.rm=TRUE)*100
+mean(abs(errors_TBATS/Tumblr_People_ts), na.rm=TRUE)*100
+
+#TBATS model has the lowest MAPE over 12 months
+
+### Using 36 months as the comparison window
+
+f_AAZ <- function(y, h) forecast(ets(y, model="AAZ", damped=TRUE), h = h)
+errors_AAZ <- tsCV(Tumblr_People_ts, f_AAZ, h=1)
+
+f_MMZ <- function(y, h) forecast(ets(y, model="MMZ", damped=TRUE), h = h)
+errors_MMZ <- tsCV(Tumblr_People_ts, f_MMZ, h=1)
+
+f_TBATS <- function(y, h) forecast(tbats(y), h = h)
+errors_TBATS <- tsCV(Tumblr_People_ts, f_TBATS, h=1)
+
+par(mfrow=c(1,1)) 
+plot(errors_AAZ, ylab='tsCV errors')
+abline(0,0)
+lines(errors_MMZ, col="green")
+lines(errors_TBATS, col="red")
+legend("left", legend=c("CV_error_AAZ", "CV_error_MMZ","CV_error_TBATS"), col=c("black", "green", "red"), lty=1:4)
+
+mean(abs(errors_AAZ/Tumblr_People_ts), na.rm=TRUE)*100
+mean(abs(errors_MMZ/Tumblr_People_ts), na.rm=TRUE)*100
+mean(abs(errors_TBATS/Tumblr_People_ts), na.rm=TRUE)*100
+
+### Additive model performs best over 36 month period
+### Use TBATS model for predictions due to smaller cone and better performance over more recent period of time
+
+
+print(Tumblr_People_tbats_pred)
+write.csv(Tumblr_People_tbats_pred, file = "Tumblr_People_tbats_pred.csv") # export the selected model's predictions into a CSV file
+
